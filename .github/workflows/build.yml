@@ -24,29 +24,40 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Verify Config (2-minute check)
+      - name: Auto-Detect and Verify Config
         run: |
           cd source
           rm -f .config
           
-          # Правильные символы для репозитория hanwckf
+          # 1. Определяем подтаргет (mt7981 или filogic)
+          SUBTARGET=$(ls target/linux/mediatek/ | grep -E 'mt7981|filogic' | head -n 1)
+          echo "Detected subtarget: $SUBTARGET"
+          
+          # 2. Ищем точное имя устройства для KN-3810
+          DEVICE_NAME=$(grep -r "Device/keenetic_kn-3810" target/linux/mediatek/image/ | head -n 1 | cut -d/ -f2 | awk '{print $1}')
+          echo "Detected device name: $DEVICE_NAME"
+          
+          # 3. Формируем конфиг
           echo "CONFIG_TARGET_mediatek=y" >> .config
-          echo "CONFIG_TARGET_mediatek_filogic=y" >> .config
-          echo "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_keenetic_kn-3810=y" >> .config
+          echo "CONFIG_TARGET_mediatek_$SUBTARGET=y" >> .config
+          echo "CONFIG_TARGET_mediatek_${SUBTARGET}_DEVICE_${DEVICE_NAME}=y" >> .config
           
           # Пакеты
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-homeproxy=y" >> .config
           echo "CONFIG_PACKAGE_sing-box=y" >> .config
+          echo "CONFIG_PACKAGE_luci-i18n-homeproxy-ru=y" >> .config
           
           make defconfig
           
-          # ПРОВЕРКА: Если профиль kn-3810 не применился, убиваем билд СРАЗУ
-          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_keenetic_kn-3810=y" .config; then
-            echo "ОШИБКА: Профиль Keenetic (filogic) не применился. Остановка."
+          # 4. Финальная проверка перед долгой сборкой
+          if ! grep -q "CONFIG_TARGET_mediatek_${SUBTARGET}_DEVICE_${DEVICE_NAME}=y" .config; then
+            echo "ERROR: Device string not found in .config after defconfig!"
+            echo "Available Keenetic devices in this repo:"
+            grep "Device/keenetic" target/linux/mediatek/image/*.mk
             exit 1
           fi
-          echo "КОНФИГ ВЕРЕН: Собираем именно для Keenetic KN-3810/3711."
+          echo "SUCCESS: Config is valid for $DEVICE_NAME. Starting build..."
 
       - name: Build
         run: |
@@ -56,12 +67,11 @@ jobs:
       - name: Output Artifacts
         run: |
           mkdir -p ./output
-          # Ищем все файлы в папке filogic
-          find source/bin/targets/mediatek/filogic/ -name "*keenetic*" -exec cp {} ./output/ \;
+          find source/bin/targets/mediatek/ -name "*keenetic*" -exec cp {} ./output/ \;
           ls -lh ./output/
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt_Keenetic_Final
+          name: ImmortalWrt_Keenetic_Final
           path: ./output/*.bin
