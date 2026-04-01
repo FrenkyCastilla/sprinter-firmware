@@ -1,4 +1,4 @@
-name: Build ImmortalWrt Sprinter Master
+name: Build ImmortalWrt Sprinter KN-3711
 
 on:
   workflow_dispatch:
@@ -19,44 +19,35 @@ jobs:
 
       - name: Clone Master Source
         run: |
-          # Клонируем Master - тут самая свежая поддержка MT798x
           git clone --depth 1 https://github.com/immortalwrt/immortalwrt source
           cd source
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Scan & Verify (3-min check)
+      - name: Verify and Set KN-3711 Config
         run: |
           cd source
-          # Поиск точной строки устройства во всем дереве MediaTek
-          DEVICE_STRING=$(grep -r "Device/keenetic_kn-3810" target/linux/mediatek/image/ | head -n 1 | cut -d/ -f2 | awk '{print $1}')
+          rm -f .config
           
-          if [ -z "$DEVICE_STRING" ]; then
-            echo "--- ОШИБКА: KN-3810 не найден в Master ---"
-            echo "Доступные устройства Keenetic в этом репозитории:"
-            grep -r "Device/keenetic" target/linux/mediatek/image/
-            exit 1
-          fi
-          
-          echo "Найдено устройство: $DEVICE_STRING"
-          
-          # Формируем конфиг
+          # Установка таргета строго под твой лог: keenetic_kn-3711
           echo "CONFIG_TARGET_mediatek=y" >> .config
           echo "CONFIG_TARGET_mediatek_filogic=y" >> .config
-          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_$DEVICE_STRING=y" >> .config
+          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_keenetic_kn-3711=y" >> .config
           
-          # Пакеты
+          # Пакеты: Прокси и интерфейс
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-homeproxy=y" >> .config
           echo "CONFIG_PACKAGE_sing-box=y" >> .config
+          echo "CONFIG_PACKAGE_luci-i18n-homeproxy-ru=y" >> .config
           
           make defconfig
           
-          if ! grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_$DEVICE_STRING=y" .config; then
-            echo "Ошибка: Конфиг не прошел валидацию."
+          # Финальная проверка перед стартом
+          if ! grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_keenetic_kn-3711=y" .config; then
+            echo "CRITICAL ERROR: Profile keenetic_kn-3711 not applied!"
             exit 1
           fi
-          echo "Валидация пройдена. Начинаем сборку."
+          echo "TARGET VERIFIED: Starting build for KN-3711..."
 
       - name: Build
         run: |
@@ -66,11 +57,11 @@ jobs:
       - name: Output
         run: |
           mkdir -p ./output
-          find source/bin/targets/mediatek/ -name "*keenetic*" -exec cp {} ./output/ \;
+          find source/bin/targets/mediatek/filogic/ -name "*keenetic*" -exec cp {} ./output/ \;
           ls -lh ./output/
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt_Sprinter_Master
+          name: ImmortalWrt_KN-3711_Final
           path: ./output/*.bin
