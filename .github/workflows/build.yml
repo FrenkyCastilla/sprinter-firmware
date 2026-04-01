@@ -1,4 +1,4 @@
-name: Build ImmortalWrt for Sprinter MT7981 Final
+name: Build ImmortalWrt Sprinter Final
 
 on:
   workflow_dispatch:
@@ -10,9 +10,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Free Disk Space & Install Deps
+      - name: Install Deps
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
           sudo apt update
           sudo apt install -y build-essential clang flex bison g++ gawk gettext git \
             libncurses5-dev libssl-dev python3 python3-setuptools python3-pyelftools \
@@ -25,44 +24,47 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Generate Config
+      - name: Verify Config (2-minute check)
         run: |
           cd source
-          # Очистка старого конфига
           rm -f .config
           
-          # Жесткое указание устройства Keenetic Hopper/Sprinter
-          echo "CONFIG_TARGET_mediatek=y" > .config
+          # Жесткая установка профиля Keenetic
+          echo "CONFIG_TARGET_mediatek=y" >> .config
           echo "CONFIG_TARGET_mediatek_mt7981=y" >> .config
-          echo "CONFIG_TARGET_mediatek_mt7981_DEVICE_keenetic_kn-3810=y" >> .config
+          echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_keenetic_kn-3810=y" >> .config
           
-          # Включаем создание Factory-образа (именно он нужен для U-Boot)
-          echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_keenetic_kn-3810_SELECT=y" >> .config
+          # Отключаем мультипрофиль, чтобы не собирать лишний мусор
+          echo "CONFIG_TARGET_MULTI_PROFILE=n" >> .config
           
           # Пакеты
-          echo "CONFIG_PACKAGE_sing-box=y" >> .config
+          echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-homeproxy=y" >> .config
-          echo "CONFIG_PACKAGE_luci-i18n-homeproxy-ru=y" >> .config
-          echo "CONFIG_PACKAGE_luci-app-ttyd=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nft-tproxy=y" >> .config
+          echo "CONFIG_PACKAGE_sing-box=y" >> .config
           
           make defconfig
+          
+          # ПРОВЕРКА: Если профиль kn-3810 не применился, убиваем билд СЕЙЧАС
+          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_keenetic_kn-3810=y" .config; then
+            echo "ОШИБКА: Профиль Keenetic не применился. Компиляция отменена."
+            exit 1
+          fi
+          echo "КОНФИГ ВЕРЕН: Собираем для KN-3810/3711."
 
       - name: Build
         run: |
           cd source
-          make -j$(nproc) || make -j1 V=s
+          make -j$(nproc)
 
-      - name: Organize Artifacts
+      - name: Output Artifacts
         run: |
           mkdir -p ./output
-          # Теперь ищем всё, что относится к keenetic
+          # Ищем файлы только с 'keenetic' в названии
           find source/bin/targets/mediatek/mt7981/ -name "*keenetic*" -exec cp {} ./output/ \;
-          echo "Найденные файлы:"
           ls -lh ./output/
 
-      - name: Upload Artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt_Keenetic_Sprinter_Correct
+          name: OpenWrt_Keenetic_Final
           path: ./output/*.bin
