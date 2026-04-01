@@ -29,13 +29,10 @@ jobs:
           cd source
           rm -f .config
           
-          # Жесткая установка профиля Keenetic
+          # Правильные символы для репозитория hanwckf
           echo "CONFIG_TARGET_mediatek=y" >> .config
-          echo "CONFIG_TARGET_mediatek_mt7981=y" >> .config
-          echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_keenetic_kn-3810=y" >> .config
-          
-          # Отключаем мультипрофиль, чтобы не собирать лишний мусор
-          echo "CONFIG_TARGET_MULTI_PROFILE=n" >> .config
+          echo "CONFIG_TARGET_mediatek_filogic=y" >> .config
+          echo "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_keenetic_kn-3810=y" >> .config
           
           # Пакеты
           echo "CONFIG_PACKAGE_luci=y" >> .config
@@ -44,12 +41,12 @@ jobs:
           
           make defconfig
           
-          # ПРОВЕРКА: Если профиль kn-3810 не применился, убиваем билд СЕЙЧАС
-          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_keenetic_kn-3810=y" .config; then
-            echo "ОШИБКА: Профиль Keenetic не применился. Компиляция отменена."
+          # ПРОВЕРКА: Если профиль kn-3810 не применился, убиваем билд СРАЗУ
+          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_keenetic_kn-3810=y" .config; then
+            echo "ОШИБКА: Профиль Keenetic (filogic) не применился. Остановка."
             exit 1
           fi
-          echo "КОНФИГ ВЕРЕН: Собираем для KN-3810/3711."
+          echo "КОНФИГ ВЕРЕН: Собираем именно для Keenetic KN-3810/3711."
 
       - name: Build
         run: |
@@ -59,8 +56,8 @@ jobs:
       - name: Output Artifacts
         run: |
           mkdir -p ./output
-          # Ищем файлы только с 'keenetic' в названии
-          find source/bin/targets/mediatek/mt7981/ -name "*keenetic*" -exec cp {} ./output/ \;
+          # Ищем все файлы в папке filogic
+          find source/bin/targets/mediatek/filogic/ -name "*keenetic*" -exec cp {} ./output/ \;
           ls -lh ./output/
 
       - name: Upload
