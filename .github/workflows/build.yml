@@ -1,4 +1,4 @@
-name: Build ImmortalWrt for Sprinter ARM64
+name: Build ImmortalWrt for Sprinter MT7981
 
 on:
   workflow_dispatch:
@@ -14,12 +14,14 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
           sudo apt update
+          # Пакеты для Ubuntu 24.04 (без python3-distutils)
           sudo apt install -y build-essential clang flex bison g++ gawk gettext git \
             libncurses5-dev libssl-dev python3 python3-setuptools python3-pyelftools \
             python-is-python3 rsync unzip zlib1g-dev libsnmp-dev liblzma-dev libpam0g-dev
 
       - name: Clone source
         run: |
+          # Используем ветку специально для MediaTek MT798x
           git clone --depth 1 https://github.com/hanwckf/immortalwrt-mt798x source
           cd source
           ./scripts/feeds update -a
@@ -28,36 +30,43 @@ jobs:
       - name: Generate Config
         run: |
           cd source
+          # КРИТИЧЕСКИЙ БЛОК: Установка таргета MT7981
           echo "CONFIG_TARGET_mediatek=y" > .config
-          echo "CONFIG_TARGET_mediatek_filogic=y" >> .config
-          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_keenetic_kn-3810=y" >> .config
+          echo "CONFIG_TARGET_mediatek_mt7981=y" >> .config
+          echo "CONFIG_TARGET_mediatek_mt7981_DEVICE_keenetic_kn-3810=y" >> .config
           
-          # Пакеты
+          # Пакеты: Прокси-комбайн
           echo "CONFIG_PACKAGE_sing-box=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-homeproxy=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-homeproxy-ru=y" >> .config
+          
+          # Системные утилиты
           echo "CONFIG_PACKAGE_luci-app-ttyd=y" >> .config
+          echo "CONFIG_PACKAGE_htop=y" >> .config
+          echo "CONFIG_PACKAGE_bash=y" >> .config
           echo "CONFIG_PACKAGE_kmod-nft-tproxy=y" >> .config
           
-          # Принудительная генерация образа
-          echo "CONFIG_TARGET_ROOTFS_TARIRE=y" >> .config
+          # Файловая система
+          echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> .config
           
           make defconfig
 
       - name: Build
         run: |
           cd source
-          # Собираем. Если упадет - на этом шаге будет красный крест.
           make -j$(nproc) || make -j1 V=s
 
-      - name: Check output directory
+      - name: Organize Artifacts
         run: |
-          echo "Listing all generated bin files:"
-          find source/bin/targets/ -name "*.bin" || echo "No .bin files found"
-          find source/bin/targets/ -name "*.buildinfo" || echo "No buildinfo found"
+          mkdir -p ./output
+          # Собираем только те файлы, где в названии есть mt7981
+          find source/bin/targets/mediatek/mt7981/ -name "*sysupgrade.bin" -exec cp {} ./output/ \;
+          find source/bin/targets/mediatek/mt7981/ -name "*initramfs-kernel.bin" -exec cp {} ./output/ \;
+          echo "Итоговые файлы для прошивки:"
+          ls -lh ./output/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt_Firmware_Sprinter
-          path: source/bin/targets/*/*/*.bin # Ищем везде в targets
+          name: ImmortalWrt_Sprinter_MT7981_Final
+          path: ./output/*.bin
