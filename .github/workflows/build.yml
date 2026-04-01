@@ -1,4 +1,4 @@
-name: Build ImmortalWrt Sprinter Official
+name: Build ImmortalWrt Sprinter Master
 
 on:
   workflow_dispatch:
@@ -17,41 +17,46 @@ jobs:
             libncurses5-dev libssl-dev python3 python3-setuptools python3-pyelftools \
             python-is-python3 rsync unzip zlib1g-dev libsnmp-dev liblzma-dev libpam0g-dev
 
-      - name: Clone Official Source
+      - name: Clone Master Source
         run: |
-          # Переходим на официальный ImmortalWrt, где есть Keenetic
-          git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/immortalwrt source
+          # Клонируем Master - тут самая свежая поддержка MT798x
+          git clone --depth 1 https://github.com/immortalwrt/immortalwrt source
           cd source
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Hard-Verify Device
+      - name: Scan & Verify (3-min check)
         run: |
           cd source
-          # Чистим конфиг
-          rm -f .config
+          # Поиск точной строки устройства во всем дереве MediaTek
+          DEVICE_STRING=$(grep -r "Device/keenetic_kn-3810" target/linux/mediatek/image/ | head -n 1 | cut -d/ -f2 | awk '{print $1}')
           
-          # Устанавливаем официальный таргет для Hopper/Sprinter
+          if [ -z "$DEVICE_STRING" ]; then
+            echo "--- ОШИБКА: KN-3810 не найден в Master ---"
+            echo "Доступные устройства Keenetic в этом репозитории:"
+            grep -r "Device/keenetic" target/linux/mediatek/image/
+            exit 1
+          fi
+          
+          echo "Найдено устройство: $DEVICE_STRING"
+          
+          # Формируем конфиг
           echo "CONFIG_TARGET_mediatek=y" >> .config
           echo "CONFIG_TARGET_mediatek_filogic=y" >> .config
-          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_keenetic_kn-3810=y" >> .config
+          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_$DEVICE_STRING=y" >> .config
           
-          # Пакеты (твои требования)
+          # Пакеты
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-homeproxy=y" >> .config
           echo "CONFIG_PACKAGE_sing-box=y" >> .config
-          echo "CONFIG_PACKAGE_luci-i18n-homeproxy-ru=y" >> .config
           
           make defconfig
           
-          # ПРОВЕРКА: Ищем строку именно в этом репо
-          if ! grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_keenetic_kn-3810=y" .config; then
-            echo "CRITICAL: Device keenetic_kn-3810 NOT FOUND even in official repo!"
-            # Список всех доступных кинетиков для отладки
-            find target/linux/mediatek/image/ -name "*.mk" -exec grep "Device/keenetic" {} +
+          if ! grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_$DEVICE_STRING=y" .config; then
+            echo "Ошибка: Конфиг не прошел валидацию."
             exit 1
           fi
-          echo "AUDIT PASSED: Official profile found. Building..."
+          echo "Валидация пройдена. Начинаем сборку."
 
       - name: Build
         run: |
@@ -61,11 +66,11 @@ jobs:
       - name: Output
         run: |
           mkdir -p ./output
-          find source/bin/targets/mediatek/filogic/ -name "*keenetic*" -exec cp {} ./output/ \;
+          find source/bin/targets/mediatek/ -name "*keenetic*" -exec cp {} ./output/ \;
           ls -lh ./output/
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt_Sprinter_Official
+          name: ImmortalWrt_Sprinter_Master
           path: ./output/*.bin
