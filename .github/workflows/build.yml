@@ -1,4 +1,4 @@
-name: Build ImmortalWrt Sprinter Final
+name: Build ImmortalWrt Sprinter MT7981 Verified
 
 on:
   workflow_dispatch:
@@ -24,23 +24,24 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Auto-Detect and Verify Config
+      - name: Zero-Trust Target Scan & Config
         run: |
           cd source
-          rm -f .config
+          # 1. Сканируем мейкфайлы на предмет точного имени Keenetic
+          RAW_DEVICE=$(grep -r "Device/keenetic" target/linux/mediatek/image/ | head -n 1 | cut -d/ -f2 | cut -d' ' -f1)
           
-          # 1. Определяем подтаргет (mt7981 или filogic)
-          SUBTARGET=$(ls target/linux/mediatek/ | grep -E 'mt7981|filogic' | head -n 1)
-          echo "Detected subtarget: $SUBTARGET"
+          if [ -z "$RAW_DEVICE" ]; then
+            echo "ERROR: Keenetic targets NOT FOUND in this repo!"
+            ls -R target/linux/mediatek/image/
+            exit 1
+          fi
           
-          # 2. Ищем точное имя устройства для KN-3810
-          DEVICE_NAME=$(grep -r "Device/keenetic_kn-3810" target/linux/mediatek/image/ | head -n 1 | cut -d/ -f2 | awk '{print $1}')
-          echo "Detected device name: $DEVICE_NAME"
+          echo "Found Device String: $RAW_DEVICE"
           
-          # 3. Формируем конфиг
-          echo "CONFIG_TARGET_mediatek=y" >> .config
-          echo "CONFIG_TARGET_mediatek_$SUBTARGET=y" >> .config
-          echo "CONFIG_TARGET_mediatek_${SUBTARGET}_DEVICE_${DEVICE_NAME}=y" >> .config
+          # 2. Формируем конфиг на основе найденного
+          echo "CONFIG_TARGET_mediatek=y" > .config
+          echo "CONFIG_TARGET_mediatek_mt7981=y" >> .config
+          echo "CONFIG_TARGET_mediatek_mt7981_DEVICE_$RAW_DEVICE=y" >> .config
           
           # Пакеты
           echo "CONFIG_PACKAGE_luci=y" >> .config
@@ -50,21 +51,21 @@ jobs:
           
           make defconfig
           
-          # 4. Финальная проверка перед долгой сборкой
-          if ! grep -q "CONFIG_TARGET_mediatek_${SUBTARGET}_DEVICE_${DEVICE_NAME}=y" .config; then
-            echo "ERROR: Device string not found in .config after defconfig!"
-            echo "Available Keenetic devices in this repo:"
-            grep "Device/keenetic" target/linux/mediatek/image/*.mk
+          # 3. Валидация перед стартом
+          if ! grep -q "CONFIG_TARGET_mediatek_mt7981_DEVICE_$RAW_DEVICE=y" .config; then
+            echo "CRITICAL ERROR: defconfig stripped our target!"
+            echo "--- DUMPING FULL .CONFIG FOR AUDIT ---"
+            cat .config
             exit 1
           fi
-          echo "SUCCESS: Config is valid for $DEVICE_NAME. Starting build..."
+          echo "AUDIT PASSED: Starting compilation for $RAW_DEVICE..."
 
       - name: Build
         run: |
           cd source
           make -j$(nproc)
 
-      - name: Output Artifacts
+      - name: Output
         run: |
           mkdir -p ./output
           find source/bin/targets/mediatek/ -name "*keenetic*" -exec cp {} ./output/ \;
@@ -73,5 +74,5 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt_Keenetic_Final
+          name: ImmortalWrt_Sprinter_Final
           path: ./output/*.bin
