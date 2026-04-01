@@ -1,4 +1,4 @@
-name: Build ImmortalWrt for Sprinter MT7981
+name: Build ImmortalWrt for Sprinter MT7981 Final
 
 on:
   workflow_dispatch:
@@ -14,14 +14,12 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
           sudo apt update
-          # Пакеты для Ubuntu 24.04 (без python3-distutils)
           sudo apt install -y build-essential clang flex bison g++ gawk gettext git \
             libncurses5-dev libssl-dev python3 python3-setuptools python3-pyelftools \
             python-is-python3 rsync unzip zlib1g-dev libsnmp-dev liblzma-dev libpam0g-dev
 
       - name: Clone source
         run: |
-          # Используем ветку специально для MediaTek MT798x
           git clone --depth 1 https://github.com/hanwckf/immortalwrt-mt798x source
           cd source
           ./scripts/feeds update -a
@@ -30,24 +28,23 @@ jobs:
       - name: Generate Config
         run: |
           cd source
-          # КРИТИЧЕСКИЙ БЛОК: Установка таргета MT7981
+          # Очистка старого конфига
+          rm -f .config
+          
+          # Жесткое указание устройства Keenetic Hopper/Sprinter
           echo "CONFIG_TARGET_mediatek=y" > .config
           echo "CONFIG_TARGET_mediatek_mt7981=y" >> .config
           echo "CONFIG_TARGET_mediatek_mt7981_DEVICE_keenetic_kn-3810=y" >> .config
           
-          # Пакеты: Прокси-комбайн
+          # Включаем создание Factory-образа (именно он нужен для U-Boot)
+          echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_keenetic_kn-3810_SELECT=y" >> .config
+          
+          # Пакеты
           echo "CONFIG_PACKAGE_sing-box=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-homeproxy=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-homeproxy-ru=y" >> .config
-          
-          # Системные утилиты
           echo "CONFIG_PACKAGE_luci-app-ttyd=y" >> .config
-          echo "CONFIG_PACKAGE_htop=y" >> .config
-          echo "CONFIG_PACKAGE_bash=y" >> .config
           echo "CONFIG_PACKAGE_kmod-nft-tproxy=y" >> .config
-          
-          # Файловая система
-          echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> .config
           
           make defconfig
 
@@ -59,14 +56,13 @@ jobs:
       - name: Organize Artifacts
         run: |
           mkdir -p ./output
-          # Собираем только те файлы, где в названии есть mt7981
-          find source/bin/targets/mediatek/mt7981/ -name "*sysupgrade.bin" -exec cp {} ./output/ \;
-          find source/bin/targets/mediatek/mt7981/ -name "*initramfs-kernel.bin" -exec cp {} ./output/ \;
-          echo "Итоговые файлы для прошивки:"
+          # Теперь ищем всё, что относится к keenetic
+          find source/bin/targets/mediatek/mt7981/ -name "*keenetic*" -exec cp {} ./output/ \;
+          echo "Найденные файлы:"
           ls -lh ./output/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt_Sprinter_MT7981_Final
+          name: ImmortalWrt_Keenetic_Sprinter_Correct
           path: ./output/*.bin
